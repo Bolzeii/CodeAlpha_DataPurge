@@ -14,7 +14,7 @@ DataPurge is a professional-grade data management dashboard designed to detect, 
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/YOUR_USERNAME/CodeAlpha_DataPurge.git
+   git clone [https://github.com/Bolzeii/CodeAlpha_DataPurge.git](https://github.com/Bolzeii/CodeAlpha_DataPurge.git)
 
 ```
 
