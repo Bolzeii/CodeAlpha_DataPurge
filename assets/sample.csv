@@ -1,0 +1,31 @@
+id,name,email,phone,city,department
+1,John Smith,john.smith@example.com,555-0100,New York,Engineering
+2,Sarah Jenkins,s.jenkins@corp.com,555-0102,Boston,Marketing
+3,Michael Chen,mchen@tech.net,555-0103,San Francisco,Design
+4,Emily Davis,emily.d@example.com,555-0104,Chicago,HR
+5,David Wilson,david.wilson@corp.com,555-0105,Austin,Sales
+6,Jessica Taylor,jtaylor@tech.net,555-0106,Seattle,Engineering
+7,Robert Brown,rbrown@example.com,555-0107,Denver,Marketing
+8,Amanda White,amanda.w@corp.com,555-0108,Miami,Design
+9,James Thomas,jthomas@tech.net,555-0109,Atlanta,HR
+10,Laura Jackson,laura.j@example.com,555-0110,Dallas,Sales
+11,William Harris,wharris@corp.com,555-0111,Phoenix,Engineering
+12,Megan Martin,mmartin@tech.net,555-0112,Las Vegas,Marketing
+13,Richard Thompson,rthompson@example.com,555-0113,Orlando,Design
+14,Ashley Garcia,ashley.g@corp.com,555-0114,Houston,HR
+15,Charles Martinez,cmartinez@tech.net,555-0115,Portland,Sales
+16,Samantha Robinson,srobinson@example.com,555-0116,Detroit,Engineering
+17,Joseph Clark,jclark@corp.com,555-0117,Minneapolis,Marketing
+18,Elizabeth Rodriguez,erodriguez@tech.net,555-0118,San Diego,Design
+19,Thomas Lewis,tlewis@example.com,555-0119,Philadelphia,HR
+20,Lauren Lee,lauren.l@corp.com,555-0120,Charlotte,Sales
+1,John Smith,john.smith@example.com,555-0100,New York,Engineering
+5,David Wilson,david.wilson@corp.com,555-0105,Austin,Sales
+23,Jhon Smith,john.smith@example.com,555-0100,New York,Engineering
+24,David Willson,david.wilsn@corp.com,5550105,Austin,Sales
+25,Catherine Green,cgreen@test.org,555-0125,Boston,Legal
+26,Kathryn Green,cgreen@test.org,555-0125,Boston,Legal
+27,Stephen King,sking@example.com,+1-555-0127,NEW YORK,Finance
+28,Steven King,sking@example.com,5550127,New York,Finance
+29,Unique User,unique@example.com,555-0999,Nowhere,Testing
+30,Another Person,another@test.com,555-0998,Somewhere,QA
