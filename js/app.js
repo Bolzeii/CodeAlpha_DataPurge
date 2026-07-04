@@ -38,56 +38,9 @@ class UnifiedDataPurgeApp {
     this.db = null;
     this.chart = null;
     this.bloom = new BloomFilter();
-    this.resolutionMode = 'manual'; // Tracks system mode context ('manual' vs 'auto')
-    this.isProcessing = false;       // Concurrency safety switch guard
+    this.resolutionMode = 'manual'; 
+    this.isProcessing = false;       
     this.init();
-  }
-
-  // Add this method inside the UnifiedDataPurgeApp class
-  async bulkPurge(classificationType) {
-    // 1. Safety Guard
-    if (this.isProcessing) return;
-    
-    // 2. User Confirmation
-    if (!confirm(`Are you sure you want to purge all records classified as: ${classificationType.toUpperCase()}?`)) {
-        return;
-    }
-
-    this.isProcessing = true;
-    this.logSystem(`Initializing bulk purge for category: ${classificationType}`, 'info');
-
-    try {
-        const tx = this.db.transaction(['duplicates', 'audit_logs'], 'readwrite');
-        const dupsStore = tx.objectStore('duplicates');
-        const auditStore = tx.objectStore('audit_logs');
-        
-        const allItems = await this._promisifiedStoreAction(dupsStore, 'getAll');
-        const targetItems = allItems.filter(i => i.status === 'pending' && i.classification === classificationType);
-
-        if (targetItems.length === 0) {
-            window.showToast(`No records found for ${classificationType}.`, 'info');
-            this.isProcessing = false;
-            return;
-        }
-
-        for (const item of targetItems) {
-            item.status = 'approved';
-            await this._promisifiedStoreAction(dupsStore, 'put', item);
-        }
-
-        await this.addAuditEntry(auditStore, 'Bulk Purge', `Cleared ${targetItems.length} items of type ${classificationType}.`);
-        window.showToast(`Bulk purge successful: ${targetItems.length} nodes removed.`, 'success');
-        
-        // Refresh UI
-        await this.renderResolverQueue();
-        await this.refreshTelemetry();
-        
-    } catch (err) {
-        console.error("Bulk purge failed:", err);
-        window.showToast("Bulk purge failed. Check console.", "warning");
-    } finally {
-        this.isProcessing = false;
-    }
   }
 
   async init() {
@@ -96,6 +49,7 @@ class UnifiedDataPurgeApp {
       this._setupNavigation();
       this._setupFileIngestion();
       this._setupModeSelector();
+      this._setupBatchActions(); // <-- NEW: Wires up the batch buttons
       this._renderCharts();
       await this.refreshTelemetry();
       this.logSystem('Initialization sequence accomplished successfully. Bloom Filter & Databases Active.', 'info');
@@ -157,7 +111,7 @@ class UnifiedDataPurgeApp {
     fileInput.addEventListener('change', (e) => {
       if (e.target.files.length > 0) {
         this.processCSVFile(e.target.files[0]);
-        e.target.value = ''; // Reset input to allow re-uploading the same file name easily
+        e.target.value = ''; 
       }
     });
   }
@@ -173,19 +127,36 @@ class UnifiedDataPurgeApp {
     }
   }
 
+  // NEW METHOD: Wires up all batch action buttons in the Resolution Center
+  _setupBatchActions() {
+    const purgeAllBtn = document.getElementById("purge-all-btn");
+    const keepDupsBtn = document.getElementById("keep-duplicates-btn");
+    const keepSuspectsBtn = document.getElementById("keep-suspects-btn");
+
+    if (purgeAllBtn) {
+      purgeAllBtn.addEventListener("click", () => this.purgeAllAnomalies());
+    }
+    if (keepDupsBtn) {
+      keepDupsBtn.addEventListener("click", () => this.keepAllAnomalies('duplicate'));
+    }
+    if (keepSuspectsBtn) {
+      keepSuspectsBtn.addEventListener("click", () => this.keepAllAnomalies('probable'));
+    }
+  }
+
   toggleResolutionControls() {
     const purgeAllBtn = document.getElementById("purge-all-btn");
     
     if (this.resolutionMode === 'auto') {
       if (purgeAllBtn) {
         purgeAllBtn.innerHTML = "💥 Auto-Purging Rules Enabled";
-        purgeAllBtn.style.background = "#10b981"; // Shift to green alert
+        purgeAllBtn.style.background = "#10b981"; 
       }
       this.purgeAllAnomalies();
     } else {
       if (purgeAllBtn) {
         purgeAllBtn.innerHTML = "💥 Purge All Pending";
-        purgeAllBtn.style.background = "#dc2626"; // Return to threat red
+        purgeAllBtn.style.background = "#dc2626"; 
       }
       this.renderResolverQueue('all');
     }
@@ -287,7 +258,6 @@ class UnifiedDataPurgeApp {
   }
 
   async processCSVFile(file) {
-    // FIX: Concurrency block prevent actions popping twice 
     if (this.isProcessing) {
       if (typeof window.showToast === 'function') window.showToast('Processing pipeline is busy.', 'warning');
       return;
@@ -572,6 +542,47 @@ class UnifiedDataPurgeApp {
     await this.refreshTelemetry();
   }
 
+  // NEW METHOD: Handles the logic for batch-keeping records
+  async keepAllAnomalies(classificationType) {
+    if (this.resolutionMode === 'auto') {
+      if (typeof window.showToast === 'function') {
+        window.showToast("Manual Override Locked: Switch back to Manual Selection mode.", "warning");
+      }
+      return;
+    }
+
+    const tx = this.db.transaction(['duplicates', 'audit_logs'], 'readwrite');
+    const dupsStore = tx.objectStore('duplicates');
+    const auditStore = tx.objectStore('audit_logs');
+    
+    const items = await this._promisifiedStoreAction(dupsStore, 'getAll');
+    const targetItems = items.filter(i => i.status === 'pending' && i.classification === classificationType);
+    
+    if (targetItems.length === 0) {
+      if (typeof window.showToast === 'function') {
+        window.showToast(`No pending ${classificationType} records found to keep.`, "info");
+      }
+      return;
+    }
+
+    let keptCount = 0;
+    for (const item of targetItems) {
+      item.status = 'dismissed'; // 'dismissed' is the system state for kept/retained records
+      await this._promisifiedStoreAction(dupsStore, 'put', item);
+      keptCount++;
+    }
+
+    const readableType = classificationType === 'probable' ? 'suspect' : 'duplicate';
+    await this.addAuditEntry(auditStore, 'Bulk Keep Sequence', `Batch system loop executed. Retained ${keptCount} ${readableType} anomalies in cache memory.`);
+    
+    if (typeof window.showToast === 'function') {
+      window.showToast(`Bulk Keep completed! Successfully retained ${keptCount} records.`, 'success');
+    }
+    
+    await this.renderResolverQueue();
+    await this.refreshTelemetry();
+  }
+
   async resolveConflict(id, resolution) {
     if (this.resolutionMode === 'auto') {
       if (typeof window.showToast === 'function') {
@@ -753,12 +764,10 @@ window.showToast = function(message, type = 'success') {
 
 // Unified Single Engine Bootloader Lifecycle Hook
 document.addEventListener('DOMContentLoaded', () => {
-  // 1. Core Platform Init
   if (!window._dataPurgeApp) {
     window._dataPurgeApp = new UnifiedDataPurgeApp();
   }
 
-  // 2. Theme Switching Logic Setup
   const themeToggleBtn = document.getElementById('theme-toggle');
   const themeIcon = document.getElementById('theme-icon');
   const themeText = document.getElementById('theme-text');
@@ -799,7 +808,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 3. Global Live Fuzzy Input Filter Search
   const searchInput = document.getElementById('global-search');
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
@@ -813,28 +821,52 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 4. Export Consolidated Dataset Engine Pipeline Trigger
   const exportBtn = document.getElementById('export-btn');
   if (exportBtn) {
-    exportBtn.addEventListener('click', () => {
-      const csvHeader = "User ID,Full Name,Email Address,Region IP,System State\n";
-      const sampleCleanRows = [
-        "US-901,Balaji Krishnan,balaji.k@cloud.in,106.201.32.45,Active",
-        "US-902,Nirmala Harish,nirmala.h@corp.net,122.164.89.12,Active",
-        "US-903,Aditya Vardhan,aditya.v@tech.io,49.207.112.80,Pending"
-      ].join("\n");
+    exportBtn.addEventListener('click', async () => {
+      try {
+        if (!window._dataPurgeApp || !window._dataPurgeApp.db) {
+          if (typeof window.showToast === 'function') window.showToast("Database not initialized yet.", "warning");
+          return;
+        }
 
-      const blob = new Blob([csvHeader + sampleCleanRows], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      
-      a.setAttribute('href', url);
-      a.setAttribute('download', 'datapurge_consolidated_export.csv');
-      a.click();
-      
-      if (typeof window.showToast === 'function') {
-        window.showToast("Consolidated tracking ledger downloaded successfully!", "success");
+        const tx = window._dataPurgeApp.db.transaction('records', 'readonly');
+        const store = tx.objectStore('records');
+        const records = await window._dataPurgeApp._promisifiedStoreAction(store, 'getAll');
+
+        if (records.length === 0) {
+            if (typeof window.showToast === 'function') window.showToast("No data available to export.", "info");
+            return;
+        }
+
+        const rawKeys = Object.keys(records[0]).filter(k => !k.startsWith('_'));
+        const csvHeader = ["ID", ...rawKeys, "System State"].join(",") + "\n";
+        
+        const csvRows = records.map(r => {
+           const rowValues = rawKeys.map(k => r[k] || 'N/A');
+           return `${r._id || 'N/A'},${rowValues.join(',')},Active`;
+        }).join("\n");
+
+        const blob = new Blob([csvHeader + csvRows], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        
+        a.setAttribute('href', url);
+        a.setAttribute('download', 'datapurge_consolidated_export.csv');
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        if (typeof window.showToast === 'function') {
+          window.showToast("Consolidated tracking ledger downloaded successfully!", "success");
+        }
+      } catch (err) {
+        console.error("Export failed:", err);
+        if (typeof window.showToast === 'function') {
+          window.showToast("Failed to export data.", "danger");
+        }
       }
     });
   }
-}, { once: true });
+});

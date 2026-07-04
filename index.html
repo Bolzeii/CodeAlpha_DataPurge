@@ -36,6 +36,31 @@
     [data-theme="light"] .sidebar .brand-dot {
       background-color: #10b981 !important;
     }
+
+    /* Styles for the new batch action buttons */
+    .btn-batch-keep {
+      background: #374151; 
+      color: #ffffff; 
+      border: 1px solid rgba(255,255,255,0.1); 
+      padding: 8px 16px; 
+      border-radius: 6px; 
+      cursor: pointer; 
+      font-weight: 600; 
+      font-size: 12px; 
+      transition: all 0.2s ease;
+    }
+    .btn-batch-keep:hover {
+      background: #4b5563;
+      border-color: rgba(255,255,255,0.2);
+    }
+    body.light-theme .btn-batch-keep {
+      background: #e2e8f0;
+      color: #0f172a;
+      border-color: #cbd5e1;
+    }
+    body.light-theme .btn-batch-keep:hover {
+      background: #cbd5e1;
+    }
   </style>
 </head>
 <body>
@@ -148,13 +173,14 @@
         
         <div class="card" style="margin-bottom: 20px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1);">
           <div style="padding: 15px; display: flex; justify-content: space-between; align-items: center;">
-            <strong style="color: #fff; font-size: 14px;">Bulk Resolution Tools:</strong>
+            <strong style="color: #fff; font-size: 14px;">Legacy Action Tools:</strong>
             <div style="display: flex; gap: 10px;">
-              <button onclick="window._dataPurgeApp.bulkPurge('duplicate')" style="background: #dc2626; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s;">Purge All Duplicates</button>
-              <button onclick="window._dataPurgeApp.bulkPurge('probable')" style="background: #f59e0b; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s;">Purge All Suspects</button>
+              <button onclick="window._dataPurgeApp.bulkPurge('duplicate')" style="background: rgba(220, 38, 38, 0.2); color: #fca5a5; border: 1px solid rgba(220, 38, 38, 0.4); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s;">Purge All Duplicates</button>
+              <button onclick="window._dataPurgeApp.bulkPurge('probable')" style="background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s;">Purge All Suspects</button>
             </div>
           </div>
         </div>
+        
         <div class="card">
           <div class="card-header" style="margin-bottom: 20px;">
             <div class="card-title">Pending Suspect Redundant Groups</div>
@@ -177,11 +203,15 @@
                 </select>
               </div>
             </div>
-            <div>
-              <button class="btn" id="purge-all-btn" style="padding: 8px 16px; font-size: 12px; font-weight: 700; border-radius: 6px; background: #dc2626; color: #ffffff; border: none; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25); transition: all 0.2s ease;" onclick="window._dataPurgeApp.purgeAllAnomalies()">
-                💥 Purge All Pending
+            
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <button class="btn-batch-keep" id="keep-suspects-btn">✔️ Keep Suspects</button>
+              <button class="btn-batch-keep" id="keep-duplicates-btn">✔️ Keep Duplicates</button>
+              <button class="btn" id="purge-all-btn" style="padding: 8px 16px; font-size: 12px; font-weight: 700; border-radius: 6px; background: #dc2626; color: #ffffff; border: none; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25); transition: all 0.2s ease;">
+                💥 Purge All
               </button>
             </div>
+            
           </div>
 
           <div id="resolution-log-container" style="margin-bottom: 16px; border-radius: 6px; overflow: hidden;"></div>
