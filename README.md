@@ -14,10 +14,8 @@ DataPurge is a professional-grade data management dashboard designed to detect, 
 
 1. **Clone the repository:**
 ```bash
-   git clone [https://github.com/Bolzeii/CodeAlpha_DataPurge.git](https://github.com/Bolzeii/CodeAlpha_DataPurge.git)
-
+  git clone https://github.com/Bolzeii/CodeAlpha_DataPurge.git
 ```
-
 
 2. **Open the application:** Navigate to the project folder and double-click `index.html` to open it in your preferred web browser.
 3. **Ingest Data:** Navigate to the "Data Ingestion" tab and drag-and-drop your `.csv` file to begin processing.
