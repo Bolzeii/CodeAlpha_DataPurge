@@ -37,7 +37,7 @@
       background-color: #10b981 !important;
     }
 
-    /* Styles for the new batch action buttons */
+    /* Styles for the batch action buttons */
     .btn-batch-keep {
       background: #374151; 
       color: #ffffff; 
@@ -205,13 +205,12 @@
             </div>
             
             <div style="display: flex; gap: 12px; align-items: center;">
-              <button class="btn-batch-keep" id="keep-suspects-btn">✔️ Keep Suspects</button>
-              <button class="btn-batch-keep" id="keep-duplicates-btn">✔️ Keep Duplicates</button>
-              <button class="btn" id="purge-all-btn" style="padding: 8px 16px; font-size: 12px; font-weight: 700; border-radius: 6px; background: #dc2626; color: #ffffff; border: none; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25); transition: all 0.2s ease;">
+              <button class="btn-batch-keep" onclick="window._dataPurgeApp.bulkKeep('probable')">✔️ Keep Suspects</button>
+              <button class="btn-batch-keep" onclick="window._dataPurgeApp.bulkKeep('duplicate')">✔️ Keep Duplicates</button>
+              <button class="btn" id="purge-all-btn" onclick="window._dataPurgeApp.bulkPurge('all')" style="padding: 8px 16px; font-size: 12px; font-weight: 700; border-radius: 6px; background: #dc2626; color: #ffffff; border: none; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25); transition: all 0.2s ease;">
                 💥 Purge All
               </button>
             </div>
-            
           </div>
 
           <div id="resolution-log-container" style="margin-bottom: 16px; border-radius: 6px; overflow: hidden;"></div>

@@ -38,9 +38,62 @@ class UnifiedDataPurgeApp {
     this.db = null;
     this.chart = null;
     this.bloom = new BloomFilter();
-    this.resolutionMode = 'manual'; 
-    this.isProcessing = false;       
+    this.resolutionMode = 'manual'; // Tracks system mode context ('manual' vs 'auto')
+    this.isProcessing = false;       // Concurrency safety switch guard
     this.init();
+  }
+
+ async bulkPurge(classificationType) {
+    if (this.isProcessing) return;
+    const tx = this.db.transaction(['duplicates'], 'readonly');
+    const allItems = await this._promisifiedStoreAction(tx.objectStore('duplicates'), 'getAll');
+    const targetItems = allItems.filter(i => i.status === 'pending' && i.classification === classificationType);
+
+    if (targetItems.length === 0) {
+        window.showToast(`No pending ${classificationType} records found.`, 'info');
+        return;
+    }
+    if (!confirm(`Are you sure you want to purge ${targetItems.length} records classified as: ${classificationType.toUpperCase()}?`)) return;
+
+    this.isProcessing = true;
+    try {
+        const writeTx = this.db.transaction(['duplicates', 'audit_logs'], 'readwrite');
+        const dupsStore = writeTx.objectStore('duplicates');
+        for (const item of targetItems) {
+            item.status = 'approved';
+            await this._promisifiedStoreAction(dupsStore, 'put', item);
+        }
+        await this.addAuditEntry(writeTx.objectStore('audit_logs'), 'Bulk Purge', `Cleared ${targetItems.length} items.`);
+        window.showToast(`Bulk purge successful: ${targetItems.length} records processed.`, 'success');
+        await this.renderResolverQueue();
+        await this.refreshTelemetry();
+    } catch (err) { console.error("Bulk purge failed:", err); } finally { this.isProcessing = false; }
+  }
+
+  async bulkKeep(classificationType) {
+    if (this.isProcessing) return;
+    const tx = this.db.transaction(['duplicates'], 'readonly');
+    const allItems = await this._promisifiedStoreAction(tx.objectStore('duplicates'), 'getAll');
+    const targetItems = allItems.filter(i => i.status === 'pending' && i.classification === classificationType);
+
+    if (targetItems.length === 0) {
+        window.showToast(`No pending ${classificationType} records found.`, 'info');
+        return;
+    }
+    // We do not need a confirmation for 'Keeping' (dismissing) as it is safer
+    this.isProcessing = true;
+    try {
+        const writeTx = this.db.transaction(['duplicates', 'audit_logs'], 'readwrite');
+        const dupsStore = writeTx.objectStore('duplicates');
+        for (const item of targetItems) {
+            item.status = 'dismissed'; // status 'dismissed' keeps the record
+            await this._promisifiedStoreAction(dupsStore, 'put', item);
+        }
+        await this.addAuditEntry(writeTx.objectStore('audit_logs'), 'Bulk Keep', `Kept ${targetItems.length} items.`);
+        window.showToast(`Bulk keep successful: ${targetItems.length} records saved.`, 'success');
+        await this.renderResolverQueue();
+        await this.refreshTelemetry();
+    } catch (err) { console.error("Bulk keep failed:", err); } finally { this.isProcessing = false; }
   }
 
   async init() {
@@ -49,7 +102,6 @@ class UnifiedDataPurgeApp {
       this._setupNavigation();
       this._setupFileIngestion();
       this._setupModeSelector();
-      this._setupBatchActions(); // <-- NEW: Wires up the batch buttons
       this._renderCharts();
       await this.refreshTelemetry();
       this.logSystem('Initialization sequence accomplished successfully. Bloom Filter & Databases Active.', 'info');
@@ -111,7 +163,7 @@ class UnifiedDataPurgeApp {
     fileInput.addEventListener('change', (e) => {
       if (e.target.files.length > 0) {
         this.processCSVFile(e.target.files[0]);
-        e.target.value = ''; 
+        e.target.value = ''; // Reset input to allow re-uploading the same file name easily
       }
     });
   }
@@ -127,36 +179,19 @@ class UnifiedDataPurgeApp {
     }
   }
 
-  // NEW METHOD: Wires up all batch action buttons in the Resolution Center
-  _setupBatchActions() {
-    const purgeAllBtn = document.getElementById("purge-all-btn");
-    const keepDupsBtn = document.getElementById("keep-duplicates-btn");
-    const keepSuspectsBtn = document.getElementById("keep-suspects-btn");
-
-    if (purgeAllBtn) {
-      purgeAllBtn.addEventListener("click", () => this.purgeAllAnomalies());
-    }
-    if (keepDupsBtn) {
-      keepDupsBtn.addEventListener("click", () => this.keepAllAnomalies('duplicate'));
-    }
-    if (keepSuspectsBtn) {
-      keepSuspectsBtn.addEventListener("click", () => this.keepAllAnomalies('probable'));
-    }
-  }
-
   toggleResolutionControls() {
     const purgeAllBtn = document.getElementById("purge-all-btn");
     
     if (this.resolutionMode === 'auto') {
       if (purgeAllBtn) {
         purgeAllBtn.innerHTML = "💥 Auto-Purging Rules Enabled";
-        purgeAllBtn.style.background = "#10b981"; 
+        purgeAllBtn.style.background = "#10b981"; // Shift to green alert
       }
       this.purgeAllAnomalies();
     } else {
       if (purgeAllBtn) {
         purgeAllBtn.innerHTML = "💥 Purge All Pending";
-        purgeAllBtn.style.background = "#dc2626"; 
+        purgeAllBtn.style.background = "#dc2626"; // Return to threat red
       }
       this.renderResolverQueue('all');
     }
@@ -258,6 +293,7 @@ class UnifiedDataPurgeApp {
   }
 
   async processCSVFile(file) {
+    // FIX: Concurrency block prevent actions popping twice 
     if (this.isProcessing) {
       if (typeof window.showToast === 'function') window.showToast('Processing pipeline is busy.', 'warning');
       return;
@@ -542,47 +578,6 @@ class UnifiedDataPurgeApp {
     await this.refreshTelemetry();
   }
 
-  // NEW METHOD: Handles the logic for batch-keeping records
-  async keepAllAnomalies(classificationType) {
-    if (this.resolutionMode === 'auto') {
-      if (typeof window.showToast === 'function') {
-        window.showToast("Manual Override Locked: Switch back to Manual Selection mode.", "warning");
-      }
-      return;
-    }
-
-    const tx = this.db.transaction(['duplicates', 'audit_logs'], 'readwrite');
-    const dupsStore = tx.objectStore('duplicates');
-    const auditStore = tx.objectStore('audit_logs');
-    
-    const items = await this._promisifiedStoreAction(dupsStore, 'getAll');
-    const targetItems = items.filter(i => i.status === 'pending' && i.classification === classificationType);
-    
-    if (targetItems.length === 0) {
-      if (typeof window.showToast === 'function') {
-        window.showToast(`No pending ${classificationType} records found to keep.`, "info");
-      }
-      return;
-    }
-
-    let keptCount = 0;
-    for (const item of targetItems) {
-      item.status = 'dismissed'; // 'dismissed' is the system state for kept/retained records
-      await this._promisifiedStoreAction(dupsStore, 'put', item);
-      keptCount++;
-    }
-
-    const readableType = classificationType === 'probable' ? 'suspect' : 'duplicate';
-    await this.addAuditEntry(auditStore, 'Bulk Keep Sequence', `Batch system loop executed. Retained ${keptCount} ${readableType} anomalies in cache memory.`);
-    
-    if (typeof window.showToast === 'function') {
-      window.showToast(`Bulk Keep completed! Successfully retained ${keptCount} records.`, 'success');
-    }
-    
-    await this.renderResolverQueue();
-    await this.refreshTelemetry();
-  }
-
   async resolveConflict(id, resolution) {
     if (this.resolutionMode === 'auto') {
       if (typeof window.showToast === 'function') {
@@ -764,10 +759,12 @@ window.showToast = function(message, type = 'success') {
 
 // Unified Single Engine Bootloader Lifecycle Hook
 document.addEventListener('DOMContentLoaded', () => {
+  // 1. Core Platform Init
   if (!window._dataPurgeApp) {
     window._dataPurgeApp = new UnifiedDataPurgeApp();
   }
 
+  // 2. Theme Switching Logic Setup
   const themeToggleBtn = document.getElementById('theme-toggle');
   const themeIcon = document.getElementById('theme-icon');
   const themeText = document.getElementById('theme-text');
@@ -808,6 +805,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // 3. Global Live Fuzzy Input Filter Search
   const searchInput = document.getElementById('global-search');
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
@@ -821,52 +819,61 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+// 4. Export Consolidated Dataset Engine (Dynamic Export)
   const exportBtn = document.getElementById('export-btn');
   if (exportBtn) {
-    exportBtn.addEventListener('click', async () => {
-      try {
-        if (!window._dataPurgeApp || !window._dataPurgeApp.db) {
-          if (typeof window.showToast === 'function') window.showToast("Database not initialized yet.", "warning");
+    exportBtn.addEventListener('click', () => {
+      if (!window._dataPurgeApp.db) {
+        window.showToast("Database not initialized.", "error");
+        return;
+      }
+
+      // Fetch ALL data from the database
+      const tx = window._dataPurgeApp.db.transaction('duplicates', 'readonly');
+      const store = tx.objectStore('duplicates');
+      const request = store.getAll();
+
+      request.onsuccess = (e) => {
+        const records = e.target.result;
+
+        if (!records || records.length === 0) {
+          window.showToast("No data to export.", "info");
           return;
         }
 
-        const tx = window._dataPurgeApp.db.transaction('records', 'readonly');
-        const store = tx.objectStore('records');
-        const records = await window._dataPurgeApp._promisifiedStoreAction(store, 'getAll');
+        // Define your CSV Header
+        const csvHeader = "ID,Context,Classification,Status\n";
 
-        if (records.length === 0) {
-            if (typeof window.showToast === 'function') window.showToast("No data available to export.", "info");
-            return;
-        }
-
-        const rawKeys = Object.keys(records[0]).filter(k => !k.startsWith('_'));
-        const csvHeader = ["ID", ...rawKeys, "System State"].join(",") + "\n";
-        
+        // Map the real database records to CSV rows
+        // NOTE: Ensure these keys (r._id, r.context, etc.) match your actual data object keys
         const csvRows = records.map(r => {
-           const rowValues = rawKeys.map(k => r[k] || 'N/A');
-           return `${r._id || 'N/A'},${rowValues.join(',')},Active`;
+          return `${r._id || ''},"${r.context || ''}","${r.classification || ''}","${r.status || ''}"`;
         }).join("\n");
 
+        // Create and trigger the download
         const blob = new Blob([csvHeader + csvRows], { type: 'text/csv' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
-        
         a.setAttribute('href', url);
-        a.setAttribute('download', 'datapurge_consolidated_export.csv');
-        document.body.appendChild(a);
+        a.setAttribute('download', 'datapurge_export.csv');
         a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
         
-        if (typeof window.showToast === 'function') {
-          window.showToast("Consolidated tracking ledger downloaded successfully!", "success");
-        }
-      } catch (err) {
-        console.error("Export failed:", err);
-        if (typeof window.showToast === 'function') {
-          window.showToast("Failed to export data.", "danger");
-        }
-      }
+        window.showToast(`Exported ${records.length} records successfully!`, "success");
+      };
+
+      request.onerror = () => {
+        window.showToast("Failed to export data.", "error");
+      };
     });
   }
-});
+}, { once: true });
+// Connect the specific UI buttons for purging by category
+  const btnPurgeDups = document.getElementById('btn-purge-duplicates');
+  if (btnPurgeDups) {
+      btnPurgeDups.addEventListener('click', () => window._dataPurgeApp.bulkPurge('duplicate'));
+  }
+
+  const btnPurgeSuspects = document.getElementById('btn-purge-suspects');
+  if (btnPurgeSuspects) {
+      btnPurgeSuspects.addEventListener('click', () => window._dataPurgeApp.bulkPurge('probable')); // 'probable' is your classification string
+  }
