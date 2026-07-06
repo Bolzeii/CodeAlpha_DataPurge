@@ -6,17 +6,29 @@ export class ResolutionCenter {
     this.audit = audit;
     this.onResolve = onResolve; 
     this.container = null;
+    this.currentFilter = 'all'; // <-- NEW: Tracks active view ('all', 'duplicates', or 'suspects')
   }
 
   init(container) {
     this.container = container;
   }
 
-  async render() {
+  // <-- NEW: Accepts a filter argument and defaults to the saved state
+  async render(filter = this.currentFilter) {
     if (!this.container) return;
+    this.currentFilter = filter; // Save the state
     this.container.innerHTML = '';
     
-    const duplicates = await this.db.getAllDuplicates('pending');
+    // 1. Fetch all pending
+    const allPending = await this.db.getAllDuplicates('pending');
+    
+    // 2. Apply active filter
+    let duplicates = allPending;
+    if (this.currentFilter === 'duplicates') {
+      duplicates = allPending.filter(d => d.classification === 'duplicate');
+    } else if (this.currentFilter === 'suspects') {
+      duplicates = allPending.filter(d => d.classification === 'suspect');
+    }
     
     if (duplicates.length === 0) {
       this._renderEmptyState();
@@ -26,10 +38,14 @@ export class ResolutionCenter {
     // Header & Batch Actions
     const header = document.createElement('div');
     header.className = 'flex justify-between align-center mb-lg';
+    
+    // Dynamically update title based on filter
+    const filterTitle = this.currentFilter === 'all' ? '' : ` (${this.currentFilter.toUpperCase()})`;
+    
     header.innerHTML = `
       <div>
-        <h2 class="page-title">Resolution Center</h2>
-        <p class="text-muted">${duplicates.length} duplicate pairs pending review</p>
+        <h2 class="page-title">Resolution Center${filterTitle}</h2>
+        <p class="text-muted">${duplicates.length} records pending review in this view</p>
       </div>
       <div class="btn-group">
         <button class="btn btn-secondary btn-sm" id="btn-batch-fp">Mark All as False Positive</button>
@@ -135,19 +151,18 @@ export class ResolutionCenter {
 
   async _handleMerge(dup) {
     const merged = { ...dup.matchedRecord };
-    // Fill empty fields in existing with values from new
     Object.keys(dup.newRecord).forEach(k => {
       if (!k.startsWith('_') && (!merged[k] || merged[k].trim() === '') && dup.newRecord[k]) {
         merged[k] = dup.newRecord[k];
       }
     });
     
-    await this.db.addRecord(merged, dup.matchedRecord._hash); // Keep original hash/id
+    await this.db.addRecord(merged, dup.matchedRecord._hash); 
     await this.db.resolveDuplicate(dup._id, 'merged');
     await this.audit.log('merge', `Merged record ${dup.newRecord._id || 'new'} into ${dup.matchedRecord._id}`, dup.matchedRecord._id);
     window.showToast('Records merged successfully', 'success');
     
-    await this.render();
+    await this.render(this.currentFilter); // <-- NEW: Passes state to maintain view
     if (this.onResolve) this.onResolve();
   }
 
@@ -156,19 +171,18 @@ export class ResolutionCenter {
     await this.audit.log('discard', `Discarded duplicate record`, dup.matchedRecord._id);
     window.showToast('Duplicate discarded', 'info');
     
-    await this.render();
+    await this.render(this.currentFilter); // <-- NEW: Passes state to maintain view
     if (this.onResolve) this.onResolve();
   }
 
   async _handleFalsePositive(dup) {
-    // Treat as unique
     const hash = 'fp_' + Date.now() + Math.random(); 
     await this.db.addRecord(dup.newRecord, hash);
     await this.db.resolveDuplicate(dup._id, 'false_positive');
     await this.audit.log('mark_false_positive', `Marked as false positive and added as unique`, dup.newRecord._id);
     window.showToast('Marked as false positive and saved', 'success');
     
-    await this.render();
+    await this.render(this.currentFilter); // <-- NEW: Passes state to maintain view
     if (this.onResolve) this.onResolve();
   }
 
@@ -177,15 +191,27 @@ export class ResolutionCenter {
       <div class="empty-state mt-lg mb-lg flex flex-col align-center" style="padding: 60px 20px; text-align: center;">
         <div class="empty-icon text-success" style="font-size: 64px; margin-bottom: 24px;">✨</div>
         <h2 style="font-size: 24px; margin-bottom: 8px;">All Clear!</h2>
-        <p class="text-muted" style="font-size: 16px;">No duplicate records are currently pending review.</p>
+        <p class="text-muted" style="font-size: 16px;">No duplicate records are currently pending review in this view.</p>
       </div>
     `;
   }
 
   async _batchResolve(action) {
-    const duplicates = await this.db.getAllDuplicates('pending');
+    // 1. Fetch all pending
+    const allPending = await this.db.getAllDuplicates('pending');
+    
+    // 2. Apply active filter (CRITICAL FIX: Only purge the items you are currently looking at)
+    let duplicatesToProcess = allPending;
+    if (this.currentFilter === 'duplicates') {
+      duplicatesToProcess = allPending.filter(d => d.classification === 'duplicate');
+    } else if (this.currentFilter === 'suspects') {
+      duplicatesToProcess = allPending.filter(d => d.classification === 'suspect');
+    }
+
     let count = 0;
-    for (const dup of duplicates) {
+    
+    // 3. Process ONLY the filtered items
+    for (const dup of duplicatesToProcess) {
       if (action === 'discard') {
         await this.db.resolveDuplicate(dup._id, 'discarded');
       } else if (action === 'false_positive') {
@@ -204,7 +230,7 @@ export class ResolutionCenter {
       window.showToast(`Marked ${count} as false positive`, 'success');
     }
     
-    await this.render();
+    await this.render(this.currentFilter); // <-- NEW: Maintain the view after batch processing
     if (this.onResolve) this.onResolve();
   }
 }
